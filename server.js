@@ -1,5 +1,4 @@
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const { MongoClient } = require("mongodb");
@@ -14,122 +13,129 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // ---------- MongoDB ----------
 const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI is missing in environment variables");
+}
+
 const mongoClient = new MongoClient(MONGO_URI);
 
-let mongoDb, bookingsCollection;
+let mongoDb, bookingsCollection, usersCollection;
 
 async function connectMongo() {
   try {
     await mongoClient.connect();
     mongoDb = mongoClient.db("sparshdb");
     bookingsCollection = mongoDb.collection("bookings");
+    usersCollection = mongoDb.collection("users");
     console.log("✅ MongoDB Connected Successfully");
   } catch (err) {
     console.error("❌ MongoDB Connection Failed:", err);
   }
 }
-
 connectMongo();
 
-// ---------- SQLite (for users login/register only) ----------
-const sqliteDb = new sqlite3.Database("./database.sqlite", (err) => {
-  if (err) console.log(err);
-  else console.log("✅ SQLite Database connected");
-});
-
-// Create USERS table
-sqliteDb.run(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
-    password TEXT
-  )
-`);
 // Test route
 app.get("/", (req, res) => {
-    res.send("Backend running successfully");
-  });
-  
-  // Register user (SQLite)
-  app.post("/register", (req, res) => {
+  res.send("Backend running successfully");
+});
+
+// Register user (MongoDB)
+app.post("/register", async (req, res) => {
+  try {
     const { email, password } = req.body;
-  
-    sqliteDb.run(
-      "INSERT INTO users (email, password) VALUES (?, ?)",
-      [email, password],
-      function (err) {
-        if (err) {
-          return res.json({ success: false, message: "User already exists" });
-        }
-        res.json({ success: true });
-      }
-    );
-  });
-  
-  // Login user (SQLite)
-  app.post("/login", (req, res) => {
+
+    if (!email || !password) {
+      return res.json({ success: false, message: "Email & password required" });
+    }
+    if (!usersCollection) {
+      return res.json({ success: false, message: "MongoDB not connected yet" });
+    }
+
+    // check existing
+    const existing = await usersCollection.findOne({ email });
+    if (existing) {
+      return res.json({ success: false, message: "User already exists" });
+    }
+
+    await usersCollection.insertOne({
+      email,
+      password, // (later we can hash)
+      createdAt: new Date(),
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false, message: "Server error" });
+  }
+});
+
+// Login user (MongoDB)
+app.post("/login", async (req, res) => {
+  try {
     const { email, password } = req.body;
-  
-    sqliteDb.get(
-      "SELECT * FROM users WHERE email = ? AND password = ?",
-      [email, password],
-      (err, row) => {
-        if (err) return res.json({ success: false, message: "Server error" });
-  
-        if (row) {
-          res.json({ success: true, message: "Login successful" });
-        } else {
-          res.json({ success: false, message: "Invalid email or password" });
-        }
-      }
-    );
-  });
-  
-  // Booking API (MongoDB)
-  app.post("/book", async (req, res) => {
-    try {
-      const { name, phone, band, date } = req.body;
-  
-      if (!name || !phone || !band || !date) {
-        return res.json({ success: false, message: "All fields required" });
-      }
-  
-      if (!bookingsCollection) {
-        return res.json({ success: false, message: "MongoDB not connected yet" });
-      }
-  
-      await bookingsCollection.insertOne({
-        name,
-        phone,
-        band,
-        date,
-        createdAt: new Date(),
-      });
-  
-      res.json({ success: true });
-    } catch (error) {
-      console.error(error);
-      res.json({ success: false, message: "Database error" });
+
+    if (!email || !password) {
+      return res.json({ success: false, message: "Email & password required" });
     }
-  });
-  
-  // Get all bookings (MongoDB) ✅ (Admin)
-  app.get("/bookings", async (req, res) => {
-    try {
-      if (!bookingsCollection) {
-        return res.json({ success: false, message: "MongoDB not connected yet" });
-      }
-  
-      const rows = await bookingsCollection
-        .find({})
-        .sort({ createdAt: -1 })
-        .toArray();
-  
-      res.json({ success: true, bookings: rows });
-    } catch (err) {
-      res.json({ success: false, message: err.message });
+    if (!usersCollection) {
+      return res.json({ success: false, message: "MongoDB not connected yet" });
     }
-  });
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+
+    const user = await usersCollection.findOne({ email, password });
+    if (user) {
+      res.json({ success: true, message: "Login successful" });
+    } else {
+      res.json({ success: false, message: "Invalid email or password" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false, message: "Server error" });
+  }
+});
+
+// Booking API (MongoDB)
+app.post("/book", async (req, res) => {
+  try {
+    const { name, phone, band, date } = req.body;
+
+    if (!name || !phone || !band || !date) {
+      return res.json({ success: false, message: "All fields required" });
+    }
+
+    if (!bookingsCollection) {
+      return res.json({ success: false, message: "MongoDB not connected yet" });
+    }
+
+    await bookingsCollection.insertOne({
+      name,
+      phone,
+      band,
+      date,
+      createdAt: new Date(),
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.json({ success: false, message: "Database error" });
+  }
+});
+
+// Get all bookings (MongoDB)
+app.get("/bookings", async (req, res) => {
+  try {
+    if (!bookingsCollection) {
+      return res.json({ success: false, message: "MongoDB not connected yet" });
+    }
+
+    const rows = await bookingsCollection.find({}).sort({ createdAt: -1 }).toArray();
+    res.json({ success: true, bookings: rows });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
