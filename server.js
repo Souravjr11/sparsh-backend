@@ -119,8 +119,10 @@ app.get("/bookings", async (req, res) => {
     res.json({ success: false, message: err.message });
   }
 });
-res.json({ ok: true, mongo: !!db, bookings: !!bookings, users: !!users });
-
+app.get("/health", (req, res) => {
+    res.json({ ok: true, mongo: !!db, bookings: !!bookings, users: !!users });
+  });
+  
   
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
