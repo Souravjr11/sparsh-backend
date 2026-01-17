@@ -48,7 +48,7 @@ app.get("/", (req, res) => {
 // Booking API
 app.post("/book", async (req, res) => {
   try {
-    const { name, phone, band, date } = req.body;
+    const { name, phone, band, date, email } = req.body;
 
     if (!name || !phone || !band || !date) {
       return res.json({ success: false, message: "All fields required" });
@@ -58,13 +58,15 @@ app.post("/book", async (req, res) => {
       }
       
 
-    await bookings.insertOne({
-      name,
-      phone,
-      band,
-      date,
-      createdAt: new Date()
-    });
+      await bookings.insertOne({
+        name,
+        phone,
+        band,
+        date,
+        email: (email || "").toLowerCase(),
+        createdAt: new Date()
+      });
+      
 
     res.json({ success: true });
   } catch (error) {
@@ -101,6 +103,25 @@ app.post("/login", async (req, res) => {
       if (!user) return res.json({ success: false, message: "Invalid credentials" });
   
       res.json({ success: true });
+    } catch (err) {
+      res.json({ success: false, message: err.message });
+    }
+  });
+  // Get bookings of a specific user (My Bookings)
+app.get("/my-bookings/:email", async (req, res) => {
+    try {
+      if (!bookings) {
+        return res.status(500).json({ success: false, message: "DB not connected" });
+      }
+  
+      const email = (req.params.email || "").toLowerCase();
+  
+      const data = await bookings
+        .find({ email })
+        .sort({ createdAt: -1 })
+        .toArray();
+  
+      res.json({ success: true, bookings: data });
     } catch (err) {
       res.json({ success: false, message: err.message });
     }
