@@ -77,56 +77,54 @@ app.post("/book", async (req, res) => {
 // TEMP USERS (not permanent - resets on restart)
 
 // Register API
+const bcrypt = require("bcrypt");
+
 app.post("/register", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      if (!email || !password) return res.json({ success: false, message: "Email & password required" });
-      if (!users) return res.status(500).json({ success: false, message: "DB not connected" });
-  
-      await users.insertOne({ email: email.toLowerCase(), password, createdAt: new Date() });
-      res.json({ success: true });
-    } catch (err) {
-      if (err.code === 11000) return res.json({ success: false, message: "User already exists" });
-      res.json({ success: false, message: err.message });
-    }
-  });
+  try {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.json({ success: false, message: "Email & password required" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await users.insertOne({
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      createdAt: new Date()
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 11000)
+      return res.json({ success: false, message: "User already exists" });
+
+    res.json({ success: false, message: err.message });
+  }
+});
+
   
 
 // Login API
 app.post("/login", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      if (!email || !password) return res.json({ success: false, message: "Email & password required" });
-      if (!users) return res.status(500).json({ success: false, message: "DB not connected" });
-  
-      const user = await users.findOne({ email: email.toLowerCase(), password });
-      if (!user) return res.json({ success: false, message: "Invalid credentials" });
-  
-      res.json({ success: true });
-    } catch (err) {
-      res.json({ success: false, message: err.message });
-    }
-  });
-  // Get bookings of a specific user (My Bookings)
-app.get("/my-bookings/:email", async (req, res) => {
-    try {
-      if (!bookings) {
-        return res.status(500).json({ success: false, message: "DB not connected" });
-      }
-  
-      const email = (req.params.email || "").toLowerCase();
-  
-      const data = await bookings
-        .find({ email })
-        .sort({ createdAt: -1 })
-        .toArray();
-  
-      res.json({ success: true, bookings: data });
-    } catch (err) {
-      res.json({ success: false, message: err.message });
-    }
-  });
-  
+  try {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.json({ success: false, message: "Email & password required" });
+
+    const user = await users.findOne({ email: email.toLowerCase() });
+    if (!user)
+      return res.json({ success: false, message: "Invalid credentials" });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match)
+      return res.json({ success: false, message: "Invalid credentials" });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, message: err.message });
+  }
+});
+
 
 // Get all bookings
 app.get("/bookings", async (req, res) => {
